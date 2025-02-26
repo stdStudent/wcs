@@ -77,6 +77,26 @@ private:
         return packet.str();
     }
 
+    std::vector<BYTE> parseHexStringToBytes(const std::string& hexStr) {
+        std::vector<BYTE> bytes;
+        std::istringstream iss(hexStr);
+        std::string token;
+        iss.ignore(2); // Skip "[ "
+
+        while (iss >> token) {
+            if (!token.empty() && token.back() == ']') token.pop_back();
+            if (token.size() < 2 || token.substr(0, 2) != "0x") continue;
+
+            unsigned int byteValue;
+            std::stringstream converter;
+            converter << std::hex << token.substr(2);
+            converter >> byteValue;
+            bytes.push_back(static_cast<BYTE>(byteValue));
+        }
+
+        return bytes;
+    }
+
     CryptHelper& cryptHelper;
 
 public:
@@ -168,6 +188,111 @@ public:
     private:
         PacketBuildHelper& parent;
     };
+
+    class ServerPacket {
+    private:
+        std::string id_;
+        std::string uuid_;
+        size_t totalBytes_ = 0;
+        size_t amountOfPackets_ = 0;
+        size_t packetNumber_ = 0;
+        size_t contentBytes_ = 0;
+        std::vector<BYTE> contentChecksum_;
+        std::vector<BYTE> content_;
+
+    public:
+        const std::string& getId() const { return id_; }
+        const std::string& getUuid() const { return uuid_; }
+        const size_t getTotalBytes() const { return totalBytes_; }
+        const size_t getAmountOfPackets() const { return amountOfPackets_; }
+        const size_t getPacketNumber() const { return packetNumber_; }
+        const size_t getContentBytes() const { return contentBytes_; }
+        const std::vector<BYTE>& getContentChecksum() const { return contentChecksum_; }
+        const std::vector<BYTE>& getContent() const { return content_; }
+
+        void setId(const std::string& id) { id_ = id; }
+        void setUuid(const std::string& uuid) { uuid_ = uuid; }
+        void setTotalBytes(size_t totalBytes) { totalBytes_ = totalBytes; }
+        void setAmountOfPackets(size_t amount) { amountOfPackets_ = amount; }
+        void setPacketNumber(size_t number) { packetNumber_ = number; }
+        void setContentBytes(size_t bytes) { contentBytes_ = bytes; }
+        void setContentChecksum(const std::vector<BYTE>& checksum) { contentChecksum_ = checksum; }
+        void setContent(const std::vector<BYTE>& content) { content_ = content; }
+    };
+
+    // Client-specific parsed packet
+    class ClientPacket {
+    private:
+        std::string id_;
+        std::string uuid_;
+        std::string argument_;
+
+    public:
+        const std::string& getId() const { return id_; }
+        const std::string& getUuid() const { return uuid_; }
+        const std::string& getArgument() const { return argument_; }
+
+        void setId(const std::string& id) { id_ = id; }
+        void setUuid(const std::string& uuid) { uuid_ = uuid; }
+        void setArgument(const std::string& argument) { argument_ = argument; }
+    };
+
+    // Parser for server packets
+    ServerPacket parseServerPacket(const std::string& packetStr) {
+        ServerPacket parsedPacket;
+        std::istringstream iss(packetStr);
+        std::string line;
+
+        if (!std::getline(iss, line) || line != "START_PACKET") {
+            return parsedPacket;
+        }
+
+        while (std::getline(iss, line)) {
+            if (line == "END_PACKET") break;
+            const size_t colonPos = line.find(": ");
+            if (colonPos == std::string::npos) continue;
+
+            std::string key = line.substr(0, colonPos);
+            std::string value = line.substr(colonPos + 2);
+
+            if (key == "ID") parsedPacket.setId(value);
+            else if (key == "UUID") parsedPacket.setUuid(value);
+            else if (key == "TOTAL_BYTES") parsedPacket.setTotalBytes(std::stoul(value));
+            else if (key == "AMOUNT_OF_PACKETS") parsedPacket.setAmountOfPackets(std::stoul(value));
+            else if (key == "PACKET_NUMBER") parsedPacket.setPacketNumber(std::stoul(value));
+            else if (key == "CONTENT_BYTES") parsedPacket.setContentBytes(std::stoul(value));
+            else if (key == "CONTENT_CHECKSUM") parsedPacket.setContentChecksum(parseHexStringToBytes(value));
+            else if (key == "CONTENT") parsedPacket.setContent(parseHexStringToBytes(value));
+        }
+
+        return parsedPacket;
+    }
+
+    // Parser for client packets
+    ClientPacket parseClientPacket(const std::string& packetStr) {
+        ClientPacket parsedPacket;
+        std::istringstream iss(packetStr);
+        std::string line;
+
+        if (!std::getline(iss, line) || line != "START_PACKET") {
+            return parsedPacket;
+        }
+
+        while (std::getline(iss, line)) {
+            if (line == "END_PACKET") break;
+            size_t colonPos = line.find(": ");
+            if (colonPos == std::string::npos) continue;
+
+            std::string key = line.substr(0, colonPos);
+            std::string value = line.substr(colonPos + 2);
+
+            if (key == "ID") parsedPacket.setId(value);
+            else if (key == "UUID") parsedPacket.setUuid(value);
+            else if (key == "ARGUMENT") parsedPacket.setArgument(value);
+        }
+
+        return parsedPacket;
+    }
 
     PacketBuildHelper(CryptHelper& cryptHelper) :
         cryptHelper(cryptHelper),
