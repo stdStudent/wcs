@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 23)
 
 # -------------------------------
 # List of common WinAPI libraries
-set(COMMON_LIBS Shlwapi ws2_32 advapi32)
+set(COMMON_LIBS Shlwapi ws2_32 advapi32 Crypt32)
 
 # -------
 # Helpers
