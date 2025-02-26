@@ -8,14 +8,14 @@ class ClientConfig {
 
 public:
     std::string serverIp;
-    short serverPort;
+    unsigned short serverPort;
     std::string filesDir;
 
     ClientConfig(ConfigHelper& config) {
         this->serverIp = config.readIni("Server", "ip");
 
         const auto serverPort = config.readIni("Server", "port");
-        this->serverPort = static_cast<short>(std::stoi(serverPort));
+        this->serverPort = static_cast<unsigned short>(std::stoi(serverPort));
 
         this->filesDir = config.readIni("Files", "dir");
         FileHelper::createAllSubdirectories(filesDir);

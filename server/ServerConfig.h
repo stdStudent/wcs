@@ -6,12 +6,12 @@
 
 class ServerConfig {
 public:
-    short serverPort;
+    unsigned short serverPort;
     std::string filesDir;
 
     ServerConfig(ConfigHelper& config) {
         const auto serverPort = config.readIni("Server", "port");
-        this->serverPort = static_cast<short>(std::stoi(serverPort));
+        this->serverPort = static_cast<unsigned short>(std::stoi(serverPort));
 
         this->filesDir = config.readIni("Files", "dir");
         FileHelper::createAllSubdirectories(filesDir);
