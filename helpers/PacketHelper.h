@@ -12,7 +12,7 @@
 
 #include "CryptHelper.h"
 
-class PacketBuildHelper {
+class PacketHelper {
 private:
     std::string generateUUID() {
         std::random_device rd;
@@ -102,7 +102,7 @@ private:
 public:
     class Server {
     public:
-        Server(PacketBuildHelper& parent) : parent(parent) {}
+        Server(PacketHelper& parent) : parent(parent) {}
 
         std::queue<std::string> getPacketList(const std::string& pathToDir) {
             std::queue<std::string> packets;
@@ -168,12 +168,12 @@ public:
         }
 
     private:
-        PacketBuildHelper& parent;
+        PacketHelper& parent;
     };
 
     class Client {
     public:
-        Client(PacketBuildHelper& parent) : parent(parent) {}
+        Client(PacketHelper& parent) : parent(parent) {}
 
         std::string getPacketList() {
             const std::string uuid = parent.generateUUID();
@@ -186,7 +186,7 @@ public:
         }
 
     private:
-        PacketBuildHelper& parent;
+        PacketHelper& parent;
     };
 
     class ServerPacket {
@@ -294,7 +294,7 @@ public:
         return parsedPacket;
     }
 
-    PacketBuildHelper(CryptHelper& cryptHelper) :
+    PacketHelper(CryptHelper& cryptHelper) :
         cryptHelper(cryptHelper),
         server(*this),
         client(*this) {}
