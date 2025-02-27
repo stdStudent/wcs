@@ -9,4 +9,5 @@ add_executable(
     main.cpp
     ClientConfig.h
     ClientRunner.h
+    ResponseHandler.h
 )
