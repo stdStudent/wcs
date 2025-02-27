@@ -16,6 +16,7 @@
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <deque>
 
 // Callback function type for processing received messages
 using MessageHandler = std::function<std::queue<std::string>(const std::string&, SOCKET)>;
@@ -26,6 +27,7 @@ public:
     static constexpr size_t DEFAULT_BUFFER_SIZE = 4096;
     static constexpr int DEFAULT_THREAD_COUNT = 2;
     static constexpr int DEFAULT_PORT = 8080;
+    static constexpr int INTERLEAVE_BATCH_SIZE = 10; // Number of messages to process from each queue before switching
 
     // Per-connection data structure
     struct ConnectionContext {
@@ -36,11 +38,12 @@ public:
         std::vector<char> sendBuffer;    // Buffer for sending data
         WSABUF wsaRecvBuffer;            // WSA buffer for recv operations
         WSABUF wsaSendBuffer;            // WSA buffer for send operations
-        std::queue<std::string> pendingSends; // Queue of messages waiting to be sent
-        std::mutex sendMutex;            // Mutex to protect pendingSends
+        std::deque<std::queue<std::string>> messageQueues; // Multiple message queues for interleaving
+        std::mutex sendMutex;            // Mutex to protect messageQueues
         bool isSending;                  // Flag to indicate if a send operation is in progress
+        size_t currentQueueIndex;        // Current queue index for round-robin processing
 
-        ConnectionContext(const SOCKET s) : socket(s), isSending(false) {
+        ConnectionContext(const SOCKET s) : socket(s), isSending(false), currentQueueIndex(0) {
             ZeroMemory(&recvOverlapped, sizeof(WSAOVERLAPPED));
             ZeroMemory(&sendOverlapped, sizeof(WSAOVERLAPPED));
             ZeroMemory(recvBuffer, DEFAULT_BUFFER_SIZE);
@@ -358,14 +361,54 @@ private:
     void postSend(ConnectionContext* context) {
         std::lock_guard lock(context->sendMutex);
 
-        // Check if there's a send operation in progress or no data to send
-        if (context->isSending || context->pendingSends.empty()) {
+        // Check if there's a send operation in progress
+        if (context->isSending) {
             return;
         }
 
-        // Get the next message to send
-        const std::string message = context->pendingSends.front();
-        context->pendingSends.pop();
+        // Check if there are any message queues
+        if (context->messageQueues.empty()) {
+            return;
+        }
+
+        // Try to find a non-empty queue using round-robin approach
+        const size_t startingIndex = context->currentQueueIndex;
+        bool foundMessage = false;
+        std::string message;
+
+        // Loop through queues starting from the current index
+        for (size_t i = 0; i < context->messageQueues.size(); i++) {
+            const size_t queueIndex = (startingIndex + i) % context->messageQueues.size();
+
+            // If this queue has messages, use it
+            if (!context->messageQueues[queueIndex].empty()) {
+                message = context->messageQueues[queueIndex].front();
+                context->messageQueues[queueIndex].pop();
+                context->currentQueueIndex = (queueIndex + 1) % context->messageQueues.size(); // Move to next queue for next time
+                foundMessage = true;
+
+                // Check if the queue is now empty and can be removed
+                if (context->messageQueues[queueIndex].empty()) {
+                    // Erase this queue
+                    context->messageQueues.erase(context->messageQueues.begin() + queueIndex);
+                    // Adjust current index if needed
+                    if (queueIndex <= context->currentQueueIndex && context->currentQueueIndex > 0) {
+                        context->currentQueueIndex--;
+                    }
+                    // Reset index if all queues are processed
+                    if (context->messageQueues.empty()) {
+                        context->currentQueueIndex = 0;
+                    }
+                }
+
+                break;
+            }
+        }
+
+        // If no message found, return
+        if (!foundMessage) {
+            return;
+        }
 
         // Update the send buffer
         context->sendBuffer.resize(message.size());
@@ -412,13 +455,10 @@ private:
         // Process the message with the handler
         auto responses = m_messageHandler(message, context->socket);
 
-        // Queue the responses for sending
-        {
+        // If we got responses, add them as a new queue
+        if (!responses.empty()) {
             std::lock_guard lock(context->sendMutex);
-            while (!responses.empty()) {
-                context->pendingSends.push(responses.front());
-                responses.pop();
-            }
+            context->messageQueues.push_back(std::move(responses));
         }
 
         // Start sending the responses
