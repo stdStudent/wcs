@@ -17,15 +17,15 @@
 #include <functional>
 #include <unordered_map>
 
+// Callback function type for processing received messages
+using MessageHandler = std::function<std::queue<std::string>(const std::string&, SOCKET)>;
+
 class ServerRunner {
 public:
     // Define constants for buffer sizes and thread pool size
     static constexpr size_t DEFAULT_BUFFER_SIZE = 4096;
     static constexpr int DEFAULT_THREAD_COUNT = 2;
     static constexpr int DEFAULT_PORT = 8080;
-
-    // Callback function type for processing received messages
-    using MessageHandler = std::function<std::queue<std::string>(const std::string&, SOCKET)>;
 
     // Per-connection data structure
     struct ConnectionContext {
