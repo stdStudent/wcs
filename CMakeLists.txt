@@ -6,7 +6,7 @@ set(CMAKE_EXE_LINKER_FLAGS "-static")
 
 # -------------------------------
 # List of common WinAPI libraries
-set(COMMON_LIBS Shlwapi ws2_32 advapi32 Crypt32)
+set(COMMON_LIBS Shlwapi ws2_32 advapi32 Crypt32 mswsock)
 
 # -------
 # Helpers
