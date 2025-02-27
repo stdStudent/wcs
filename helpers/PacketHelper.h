@@ -39,6 +39,7 @@ private:
 
     std::string buildServerPacket(
         const std::string& id,
+        const std::string& argument,
         const std::string& uuid,
         const size_t totalBytes,
         const size_t amountOfPackets,
@@ -50,6 +51,7 @@ private:
         std::stringstream packet;
         packet << "START_PACKET\n"
                << "ID: " << id << "\n"
+               << "ARGUMENT: " << argument << "\n"
                << "UUID: " << uuid << "\n"
                << "TOTAL_BYTES: " << totalBytes << "\n"
                << "AMOUNT_OF_PACKETS: " << amountOfPackets << "\n"
@@ -104,9 +106,8 @@ public:
     public:
         Server(PacketHelper& parent) : parent(parent) {}
 
-        std::queue<std::string> getPacketList(const std::string& pathToDir) {
+        std::queue<std::string> getPacketList(const std::string& uuid, const std::string& pathToDir) {
             std::queue<std::string> packets;
-            const std::string uuid = parent.generateUUID();
             size_t totalBytes = 0;
             std::vector<std::string> filenames;
 
@@ -128,22 +129,25 @@ public:
                 std::string contentStr = parent.bytesToHexString(content);
 
                 std::string packetStr = parent.buildServerPacket(
-                    "list", uuid, totalBytes, amountOfPackets, i + 1,
+                    "list", "", uuid, totalBytes, amountOfPackets, i + 1,
                     filename.size(), checksumStr, contentStr);
 
                 packets.push(packetStr);
             }
+
+            if (packets.empty())
+                packets.push(parent.buildServerPacket("list", "", uuid, 0, 0, 1, 0, "", ""));
+
             return packets;
         }
 
-        std::queue<std::string> getPacketGet(std::fstream& file) {
+        std::queue<std::string> getPacketGet(const std::string& uuid, const std::string& argument, std::fstream& file) {
             std::queue<std::string> packets;
-            const std::string uuid = parent.generateUUID();
             file.seekg(0, std::ios::end);
             const auto totalBytes = static_cast<size_t>(file.tellg());
             file.seekg(0, std::ios::beg);
 
-            constexpr size_t chunkSize = 1024;
+            constexpr size_t chunkSize = 512;
             const size_t amountOfPackets = (totalBytes + chunkSize - 1) / chunkSize;
 
             for (size_t packetNumber = 1; packetNumber <= amountOfPackets; ++packetNumber) {
@@ -159,11 +163,15 @@ public:
                 std::string contentStr = parent.bytesToHexString(chunk);
 
                 std::string packetStr = parent.buildServerPacket(
-                    "get", uuid, totalBytes, amountOfPackets, packetNumber,
+                    "get", argument, uuid, totalBytes, amountOfPackets, packetNumber,
                     bytesRead, checksumStr, contentStr);
 
                 packets.push(packetStr);
             }
+
+            if (packets.empty())
+                packets.push(parent.buildServerPacket("get", argument, uuid, totalBytes, amountOfPackets, 1, 0, "", ""));
+
             return packets;
         }
 
@@ -192,6 +200,7 @@ public:
     class ServerPacket {
     private:
         std::string id_;
+        std::string argument_;
         std::string uuid_;
         size_t totalBytes_ = 0;
         size_t amountOfPackets_ = 0;
@@ -202,6 +211,7 @@ public:
 
     public:
         const std::string& getId() const { return id_; }
+        const std::string& getArgument() const { return argument_; }
         const std::string& getUuid() const { return uuid_; }
         const size_t getTotalBytes() const { return totalBytes_; }
         const size_t getAmountOfPackets() const { return amountOfPackets_; }
@@ -211,6 +221,7 @@ public:
         const std::vector<BYTE>& getContent() const { return content_; }
 
         void setId(const std::string& id) { id_ = id; }
+        void setArgument(const std::string& argument) { argument_ = argument; }
         void setUuid(const std::string& uuid) { uuid_ = uuid; }
         void setTotalBytes(size_t totalBytes) { totalBytes_ = totalBytes; }
         void setAmountOfPackets(size_t amount) { amountOfPackets_ = amount; }
@@ -256,6 +267,7 @@ public:
             std::string value = line.substr(colonPos + 2);
 
             if (key == "ID") parsedPacket.setId(value);
+            else if (key == "ARGUMENT") parsedPacket.setArgument(value);
             else if (key == "UUID") parsedPacket.setUuid(value);
             else if (key == "TOTAL_BYTES") parsedPacket.setTotalBytes(std::stoul(value));
             else if (key == "AMOUNT_OF_PACKETS") parsedPacket.setAmountOfPackets(std::stoul(value));
