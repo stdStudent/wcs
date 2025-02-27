@@ -1,17 +1,17 @@
 #include <iostream>
 #include <windows.h>
+#include <conio.h>
 
 #include "ClientConfig.h"
 #include "ClientRunner.h"
 #include "ConfigHelper.h"
 
-bool isKeyPressed(const int vkCode, bool& prevState) {
-    const bool currentState = (GetAsyncKeyState(vkCode) & 0x8000) != 0;
-    if (currentState && !prevState) {
-        prevState = true;
-        return true; // Key pressed (transition from up to down)
+bool isKeyPressed(const int vkCode) {
+    if (_kbhit()) {
+        const int key = _getch();
+        if (key == vkCode)
+            return true; // Key pressed
     }
-    prevState = currentState;
     return false;
 }
 
@@ -33,7 +33,6 @@ int main() {
 
     // Main application loop
     bool running = true;
-    bool cPressedState = false;
     while (running) {
         // Update client (process network I/O non-blockingly)
         clientRunner.update();
@@ -46,7 +45,7 @@ int main() {
         clientRunner.clearResponses();
 
         // if user presses letter 'c', let him type command and press enter (non-blocking)
-        if (isKeyPressed('C', cPressedState)) {
+        if (isKeyPressed('c')) {
             std::cout << "Enter command: ";
             std::string command;
 
