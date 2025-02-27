@@ -15,6 +15,13 @@ private:
     std::vector<std::string> m_receivedResponses;
     bool m_isConnected;
 
+    // Buffer for accumulating received data
+    std::string m_receiveBuffer;
+
+    // Constants for packet markers
+    const std::string START_MARKER = "START_PACKET";
+    const std::string END_MARKER = "END_PACKET";
+
 public:
     ClientRunner() : m_socket(INVALID_SOCKET), m_isConnected(false) {
         // Initialize Winsock
@@ -67,6 +74,8 @@ public:
         }
 
         m_isConnected = false;
+        // Clear the receive buffer when disconnecting
+        m_receiveBuffer.clear();
         WSACleanup();
     }
 
@@ -136,14 +145,57 @@ private:
         const int bytesReceived = recv(m_socket, buffer, sizeof(buffer) - 1, 0);
 
         if (bytesReceived > 0) {
-            // Null-terminate the received data
+            // Append new data to existing buffer
             buffer[bytesReceived] = '\0';
+            m_receiveBuffer.append(buffer, bytesReceived);
 
-            // Store the response
-            m_receivedResponses.emplace_back(buffer, bytesReceived);
+            // Process all complete packets in the buffer
+            processBuffer();
         } else if (bytesReceived == 0 || WSAGetLastError() != WSAEWOULDBLOCK) {
             // Connection closed or error
             disconnect();
+        }
+    }
+
+    void processBuffer() {
+        // Process and extract all complete packets from the buffer
+        size_t startPos = 0;
+
+        // Continue as long as we can find a start marker in the remaining buffer
+        while ((startPos = m_receiveBuffer.find(START_MARKER, startPos)) != std::string::npos) {
+            // Look for an end marker after this start marker
+            size_t endPos = m_receiveBuffer.find(END_MARKER, startPos);
+
+            // If we found a complete packet
+            if (endPos != std::string::npos) {
+                // Extract the complete packet (including END_MARKER which is 10 chars long)
+                std::string packet = m_receiveBuffer.substr(
+                    startPos,
+                    endPos - startPos + END_MARKER.length()
+                );
+
+                // Add to our received responses
+                m_receivedResponses.push_back(packet);
+
+                // Move start position to just after this packet
+                startPos = endPos + END_MARKER.length();
+            } else {
+                // We found a start but no end - this is a partial packet
+                // Leave it in the buffer and exit the loop to wait for more data
+                break;
+            }
+        }
+
+        // Remove all processed data from the buffer
+        // If startPos is 0, no complete packets were found, so keep everything
+        // If startPos > 0, we've processed up to startPos, so remove that portion
+        if (startPos > 0) {
+            m_receiveBuffer.erase(0, startPos);
+        }
+
+        constexpr size_t MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB max buffer
+        if (m_receiveBuffer.size() > MAX_BUFFER_SIZE) {
+            m_receiveBuffer.clear();
         }
     }
 };
