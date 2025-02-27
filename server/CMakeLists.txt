@@ -8,4 +8,5 @@ add_executable(
 
     main.cpp
     ServerConfig.h
+    ServerRunner.h
 )
