@@ -11,7 +11,6 @@
 #include <string>
 #include <queue>
 #include <vector>
-#include <thread>
 #include <mutex>
 #include <atomic>
 #include <memory>
@@ -131,11 +130,40 @@ public:
         m_running = true;
 
         // Start the accept thread
-        m_acceptThread = std::thread(&ServerRunner::acceptThreadProc, this);
+        m_acceptThread = CreateThread(
+            nullptr,                         // Default security attributes
+            0,                               // Default stack size
+            &ServerRunner::acceptThreadFunc, // Thread function
+            this,                            // Parameter to thread function
+            0,                               // Run immediately
+            &m_acceptThreadId                // Thread identifier
+        );
+
+        if (m_acceptThread == nullptr) {
+            printf("Failed to create accept thread: %d\n", GetLastError());
+            stop();
+            return false;
+        }
 
         // Start worker threads
+        m_workerThreads.resize(m_threadCount);
+        m_workerThreadIds.resize(m_threadCount);
+
         for (size_t i = 0; i < m_threadCount; i++) {
-            m_workerThreads.emplace_back(&ServerRunner::workerThreadProc, this);
+            m_workerThreads[i] = CreateThread(
+                nullptr,                          // Default security attributes
+                0,                                // Default stack size
+                &ServerRunner::workerThreadFunc,  // Thread function
+                this,                             // Parameter to thread function
+                0,                                // Run immediately
+                &m_workerThreadIds[i]             // Thread identifier
+            );
+
+            if (m_workerThreads[i] == nullptr) {
+                printf("Failed to create worker thread %zu: %d\n", i, GetLastError());
+                stop();
+                return false;
+            }
         }
 
         printf("Server started on port %d with %llu worker threads\n", m_port, m_threadCount);
@@ -158,17 +186,28 @@ public:
         }
 
         // Wait for accept thread to finish
-        if (m_acceptThread.joinable()) {
-            m_acceptThread.join();
+        if (m_acceptThread != nullptr) {
+            WaitForSingleObject(m_acceptThread, INFINITE);
+            CloseHandle(m_acceptThread);
+            m_acceptThread = nullptr;
         }
 
         // Wait for worker threads to finish
-        for (auto& thread : m_workerThreads) {
-            if (thread.joinable()) {
-                thread.join();
+        if (!m_workerThreads.empty()) {
+            WaitForMultipleObjects(
+                m_workerThreads.size(),
+                m_workerThreads.data(),
+                TRUE,
+                INFINITE
+            );
+
+            // Close thread handles
+            for (const auto& thread : m_workerThreads) {
+                CloseHandle(thread);
             }
+            m_workerThreads.clear();
+            m_workerThreadIds.clear();
         }
-        m_workerThreads.clear();
 
         // Close all client connections
         for (const auto& connectionContext: m_connections | std::views::values) {
@@ -190,6 +229,19 @@ public:
     }
 
 private:
+    // Static thread entry point functions
+    static DWORD WINAPI acceptThreadFunc(LPVOID lpParam) {
+        auto* server = static_cast<ServerRunner*>(lpParam);
+        server->acceptThreadProc();
+        return 0;
+    }
+
+    static DWORD WINAPI workerThreadFunc(LPVOID lpParam) {
+        auto* server = static_cast<ServerRunner*>(lpParam);
+        server->workerThreadProc();
+        return 0;
+    }
+
     // Thread procedure for accepting connections
     void acceptThreadProc() {
         while (m_running) {
@@ -410,8 +462,13 @@ private:
     std::atomic<bool> m_running;     // Flag to indicate if the server is running
     HANDLE m_completionPort;         // IOCP handle
     SOCKET m_listenSocket;           // Listening socket
-    std::thread m_acceptThread;      // Thread for accepting connections
-    std::vector<std::thread> m_workerThreads; // Worker threads
+
+    // Windows thread handles and IDs
+    HANDLE m_acceptThread;           // Thread for accepting connections
+    DWORD m_acceptThreadId;          // Accept thread ID
+    std::vector<HANDLE> m_workerThreads; // Worker threads
+    std::vector<DWORD> m_workerThreadIds; // Worker thread IDs
+
     MessageHandler m_messageHandler; // Handler for processing messages
 
     // Map of active connections
