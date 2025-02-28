@@ -13,13 +13,13 @@ private:
     ClientConfig& clientConfig;
     PacketHelper& packageHelper;
 
+    std::unordered_map<std::string, std::vector<std::string>> listResponseMap;
+
 public:
     ResponseHandler(ClientConfig& clientConfig, PacketHelper& packageHelper)
         : clientConfig(clientConfig), packageHelper(packageHelper) {}
 
     void handleResponses(const std::vector<std::string> responses) {
-        std::unordered_map<std::string, std::vector<std::string>> listResponseMap;
-
         for (const auto& response : responses) {
             const auto serverPacket = packageHelper.parseServerPacket(response);
             const auto& serverPacketId = serverPacket.getId();
